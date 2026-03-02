@@ -86,7 +86,7 @@ python -m yui --prompt "List files in the current directory"
 python -m yui --config /path/to/config.yaml
 
 # Slack mode
-python -m yui --channel slack
+python -m yui --slack
 
 # Daemon mode
 python -m yui --daemon
