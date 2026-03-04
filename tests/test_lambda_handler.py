@@ -327,3 +327,130 @@ def test_lambda_handler__low_remaining_time__returns_200(monkeypatch):
     assert "timeout" in result["body"]
 
 
+
+
+# ── Phase 6 カバレッジ補強テスト (Part 2: secrets/signature/event_callback) ──
+
+def test_get_secrets__no_arn__returns_stub(monkeypatch):
+    """SECRETS_ARN 未設定時はスタブ値を返すこと。"""
+    monkeypatch.delenv("SECRETS_ARN", raising=False)
+    import importlib
+    import yui.lambda_handler_utils as lhu; import yui.lambda_handler as lh
+    lhu._secrets_cache = None  # キャッシュリセット
+
+    secrets = lhu._get_secrets()
+    assert "BEDROCK_MODEL_ID" in secrets
+    lhu._secrets_cache = None  # 後処理
+
+
+def test_verify_slack_signature__no_signing_secret__returns_true(monkeypatch):
+    """SLACK_SIGNING_SECRET 未設定時は検証をスキップして True を返すこと。"""
+    monkeypatch.delenv("SLACK_SIGNING_SECRET", raising=False)
+    from yui.lambda_handler_utils import _verify_slack_signature
+    result = _verify_slack_signature({"X-Slack-Signature": "v0=abc"}, "body")
+    assert result is True
+
+
+def test_verify_slack_signature__stale_timestamp__returns_false(monkeypatch):
+    """タイムスタンプが60秒以上古い場合は False を返すこと。"""
+    monkeypatch.setenv("SLACK_SIGNING_SECRET", "test_secret")
+    stale_ts = str(int(_time.time()) - 120)  # 2分前
+    from yui.lambda_handler_utils import _verify_slack_signature
+    result = _verify_slack_signature(
+        {"x-slack-signature": "v0=abc", "x-slack-request-timestamp": stale_ts},
+        "body",
+    )
+    assert result is False
+
+
+def test_verify_slack_signature__missing_headers__returns_false(monkeypatch):
+    """署名ヘッダーがない場合は False を返すこと。"""
+    monkeypatch.setenv("SLACK_SIGNING_SECRET", "test_secret")
+    from yui.lambda_handler_utils import _verify_slack_signature
+    result = _verify_slack_signature({}, "body")
+    assert result is False
+
+
+# ── Secrets Manager / Bedrock モックテスト ──────────────────────────────────
+
+
+
+def test_get_secrets__with_arn__returns_parsed_secret(monkeypatch):
+    """SECRETS_ARN 設定時に Secrets Manager から値を取得すること。"""
+    import yui.lambda_handler_utils as lhu; import yui.lambda_handler as lh
+    lhu._secrets_cache = None
+
+    secret_data = {"SLACK_BOT_TOKEN": "xoxb-test", "BEDROCK_MODEL_ID": "amazon.nova-lite-v1:0"}
+    mock_sm = MagicMock()
+    mock_sm.get_secret_value.return_value = {"SecretString": json.dumps(secret_data)}
+
+    monkeypatch.setenv("SECRETS_ARN", "arn:aws:secretsmanager:us-east-1:123:secret:test")
+
+    with patch("boto3.client", return_value=mock_sm):
+        secrets = lhu._get_secrets()
+    assert secrets["SLACK_BOT_TOKEN"] == "xoxb-test"
+    lhu._secrets_cache = None
+
+
+def test_get_secrets__resource_not_found__raises_runtime_error(monkeypatch):
+    """存在しない ARN では RuntimeError を投げること。"""
+    import yui.lambda_handler_utils as lhu; import yui.lambda_handler as lh
+    lhu._secrets_cache = None
+    monkeypatch.setenv("SECRETS_ARN", "arn:aws:secretsmanager:us-east-1:123:secret:missing")
+
+    mock_sm = MagicMock()
+    from botocore.exceptions import ClientError
+    not_found_exc = ClientError(
+        {"Error": {"Code": "ResourceNotFoundException", "Message": "Not found"}},
+        "GetSecretValue",
+    )
+    mock_sm.get_secret_value.side_effect = not_found_exc
+    mock_sm.exceptions.ResourceNotFoundException = ClientError
+
+    with patch("boto3.client", return_value=mock_sm):
+        with pytest.raises(RuntimeError, match="not found"):
+            lhu._get_secrets()
+    lhu._secrets_cache = None
+
+
+def test_lambda_handler__event_callback_with_mock_bedrock__returns_200(monkeypatch):
+    """event_callback で Bedrock モック経由の応答が 200 を返すこと。"""
+    monkeypatch.setenv("LAMBDA_RUNTIME", "true")
+    monkeypatch.delenv("SECRETS_ARN", raising=False)
+    monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
+
+    import yui.lambda_handler_utils as lhu; import yui.lambda_handler as lh
+    lhu._secrets_cache = None
+
+    event_body = {
+        "type": "event_callback",
+        "event": {"type": "message", "text": "hello", "channel": "C123", "user": "U123"},
+    }
+    event = LambdaEventFactory.api_gateway_event(body=json.dumps(event_body))
+    context = LambdaContextFactory.create()
+
+    bedrock_response = {
+        "output": {"message": {"content": [{"text": "こんにちは！"}]}},
+        "stopReason": "end_turn",
+    }
+
+    with patch("boto3.client") as mock_boto:
+        mock_bedrock = MagicMock()
+        mock_bedrock.converse.return_value = bedrock_response
+        mock_boto.return_value = mock_bedrock
+
+        result = lh.handler(event, context)
+        assert result["statusCode"] == 200
+
+    lhu._secrets_cache = None
+
+
+def test_lambda_handler__socket_mode__raises_not_implemented(monkeypatch):
+    """LAMBDA_RUNTIME が true 以外では NotImplementedError を返すこと。"""
+    monkeypatch.setenv("LAMBDA_RUNTIME", "false")
+    event = LambdaEventFactory.api_gateway_event()
+    context = LambdaContextFactory.create()
+
+    from yui.lambda_handler import handler
+    with pytest.raises(NotImplementedError):
+        handler(event, context)
