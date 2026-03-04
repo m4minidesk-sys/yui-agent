@@ -89,10 +89,11 @@ class SlackHandler:
             # Acknowledge
             self.safe_react(channel, event["ts"], "eyes")
 
-            # Session ID
-            session_id = f"slack:{channel}:{user}"
+            # Session ID: thread_ts でスレッドごとに分離（Issue #116）
+            # thread_ts がない場合は event["ts"] がスレッド開始TS
+            session_id = f"slack:{channel}:{thread_ts}"
             self.session_manager.get_or_create_session(
-                session_id, {"channel": channel, "user": user}
+                session_id, {"channel": channel, "user": user, "thread_ts": thread_ts}
             )
 
             # Add user message
