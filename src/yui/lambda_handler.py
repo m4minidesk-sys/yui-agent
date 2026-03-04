@@ -265,10 +265,15 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     # イベントタイプ別処理
     event_type = body.get("type", "")
-    if event_type == "url_verification":
-        return _handle_url_verification(body)
-    elif event_type == "event_callback":
-        return _handle_event_callback(body, context)
-    else:
-        logger.info("Unknown event type: %s", event_type)
-        return {"statusCode": 200, "body": json.dumps({"message": "unhandled event"})}
+    try:
+        if event_type == "url_verification":
+            return _handle_url_verification(body)
+        elif event_type == "event_callback":
+            return _handle_event_callback(body, context)
+        else:
+            logger.info("Unknown event type: %s", event_type)
+            return {"statusCode": 200, "body": json.dumps({"message": "unhandled event"})}
+    except RuntimeError as e:
+        # _get_secrets() 等の内部エラー — 詳細は CloudWatch に、外部には 500 のみ
+        logger.error("handler: internal error: %s", e)
+        return {"statusCode": 500, "body": json.dumps({"message": "internal error"})}
