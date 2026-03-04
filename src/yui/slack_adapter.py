@@ -84,15 +84,20 @@ class SlackHandler:
             channel = event["channel"]
             user = event["user"]
             text = event["text"]
-            thread_ts = event.get("thread_ts") or event["ts"]
+            # event["ts"] は Slack app_mention で必須フィールドだが防御的に .get() を使用
+            msg_ts = event.get("ts", "")
+            thread_ts = event.get("thread_ts") or msg_ts
 
             # Acknowledge
-            self.safe_react(channel, event["ts"], "eyes")
+            if msg_ts:
+                self.safe_react(channel, msg_ts, "eyes")
 
-            # Session ID
-            session_id = f"slack:{channel}:{user}"
+            # Session ID: thread_ts でスレッドごとに分離（Issue #116）
+            # 同一スレッド内のメッセージは同じ thread_ts → 同一セッション
+            # 新規スレッドは event["ts"] がスレッド起点 → 独立セッション
+            session_id = f"slack:{channel}:{thread_ts}"
             self.session_manager.get_or_create_session(
-                session_id, {"channel": channel, "user": user}
+                session_id, {"channel": channel, "user": user, "thread_ts": thread_ts}
             )
 
             # Add user message

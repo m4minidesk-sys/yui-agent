@@ -459,3 +459,90 @@ class TestScenario3ErrorFallback:
             pytest.fail("例外が SlackHandler の外に漏れた")
 
         assert mock_slack_client.chat_postMessage.called
+
+
+# ── セッション分離テスト（Issue #116） ──────────────────────────────────────
+
+class TestSessionIsolationByThread:
+    """IT07 SessionMemory バグ修正の回帰テスト。
+    
+    session_id が slack:{channel}:{thread_ts} で生成され、
+    スレッドごとに独立したセッションになることを検証する。
+    """
+
+    def test_channel_message_uses_thread_ts_as_session_id(
+        self, slack_handler, mock_agent, mock_session_manager
+    ):
+        """チャンネルメッセージのsession_idにthread_tsが使われること。"""
+        event = {
+            "type": "app_mention",
+            "channel": "C12345",
+            "user": "U99999",
+            "text": "<@UYUI> こんにちは",
+            "ts": "1000.001",
+            # thread_ts なし → ts がスレッドの起点
+        }
+        say = MagicMock()
+        slack_handler.handle_mention(event, say)
+
+        # get_or_create_session が thread_ts ベースのsession_idで呼ばれること
+        call_args = mock_session_manager.get_or_create_session.call_args
+        session_id = call_args[0][0]
+        assert session_id == "slack:C12345:1000.001", \
+            f"Expected thread_ts-based session_id, got: {session_id}"
+
+    def test_thread_reply_uses_thread_ts_as_session_id(
+        self, slack_handler, mock_agent, mock_session_manager
+    ):
+        """スレッド内返信はthread_tsでセッションが分離されること。"""
+        event = {
+            "type": "app_mention",
+            "channel": "C12345",
+            "user": "U99999",
+            "text": "<@UYUI> 続き",
+            "ts": "1000.002",
+            "thread_ts": "1000.001",  # 既存スレッドへの返信
+        }
+        say = MagicMock()
+        slack_handler.handle_mention(event, say)
+
+        call_args = mock_session_manager.get_or_create_session.call_args
+        session_id = call_args[0][0]
+        # thread_ts = "1000.001" でセッション識別
+        assert session_id == "slack:C12345:1000.001", \
+            f"Expected thread_ts-based session_id, got: {session_id}"
+
+    def test_different_threads_get_different_sessions(
+        self, mock_agent, mock_session_manager, mock_slack_client
+    ):
+        """異なるスレッドは異なるsession_idになること（再実行時に前回TSが混入しない）。"""
+        from yui.slack_adapter import SlackHandler
+        handler = SlackHandler(
+            agent=mock_agent,
+            session_manager=mock_session_manager,
+            slack_client=mock_slack_client,
+            compaction_threshold=50,
+        )
+
+        session_ids = []
+
+        def capture_session(event, say):
+            handler.handle_mention(event, say)
+            call_args = mock_session_manager.get_or_create_session.call_args
+            session_ids.append(call_args[0][0])
+
+        say = MagicMock()
+        # スレッド1
+        event1 = {"type": "app_mention", "channel": "C12345", "user": "U1",
+                  "text": "test1", "ts": "2000.001"}
+        capture_session(event1, say)
+        # スレッド2（別スレッド）
+        event2 = {"type": "app_mention", "channel": "C12345", "user": "U1",
+                  "text": "test2", "ts": "3000.001"}
+        capture_session(event2, say)
+
+        assert len(session_ids) == 2
+        assert session_ids[0] != session_ids[1], \
+            f"Different threads must have different session_ids: {session_ids}"
+        assert "2000.001" in session_ids[0]
+        assert "3000.001" in session_ids[1]
