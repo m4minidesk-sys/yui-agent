@@ -10,7 +10,14 @@ jobs:
         with:
           fetch-depth: 0
       - name: Check PR size
+        env:
+          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
+          # skip-size-check ラベルがあればスキップ
+          if echo "$LABELS" | grep -q "skip-size-check"; then
+            echo "⏭️ skip-size-check ラベルが付与されているためスキップ"
+            exit 0
+          fi
           BASE="${{ github.base_ref }}"
           git fetch origin "$BASE"
           LINES=$(git diff --numstat "origin/$BASE" | awk '{sum+=$1+$2} END {print sum+0}')
