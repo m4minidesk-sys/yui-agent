@@ -1807,3 +1807,40 @@ yui workshop show-report <test-id>         # Show specific report
 | 2026-02-25 | AYA | v0.8.0 — New Section 5.2.1: Slack App/Bot Setup Guide (complete step-by-step). Full app manifest YAML with all required OAuth scopes (15 bot scopes). Socket Mode architecture explained (why no public URL needed, firewall-friendly). Token generation guide (Bot Token xoxb + App-Level Token xapp). Config integration (config.yaml + .env). Slack capabilities matrix (mention, DM, channels, reactions, file upload, threads). AC-62 through AC-66 added (setup validation, manifest shipping, token errors, response time, DM support). |
 | 2026-02-26 | AYA | v0.9.0 — New Section 8: Autonomy Architecture (Phase 2–3). Single-agent ceiling analysis. Autonomy levels L0–L4 defined. Layer 1: Strands Agent Loop (ReAct). Layer 2: Yui ⇔ Kiro Cross-Review via GraphBuilder Reflexion Loop — requirements review by Kiro (per han directive), coding workflow, design review. Kiro CLI tools (`kiro_review`, `kiro_implement`) as Strands @tool. Layer 3: Self-Evaluation + Self-Improvement (task-level eval, weekly AGENTS.md PR proposals, OODA loop). Guardrails: AGENTS.md changes via PR only, cost budget, loop limits, maintenance window. Evidence from AYA ecosystem. Sections 8–16 renumbered to 9–17. AC-67 through AC-80 added (14 new, cumulative 80 ACs). |
 | 2026-02-26 | AYA | v0.10.0 — Kiro review round 4: 20 findings (C4/M7/m9). ALL FIXED. C-01/C-02/C-03: Pre-Phase 0 SDK verification expanded (GraphBuilder cycles, @tool subprocess, Guardrails API). C-04: New Section 8.8 Failure Modes & Recovery (6 failure scenarios with detection/recovery). M-01: New Section 8.9 Level Transition Criteria (L0→L4 concrete metrics). M-02: AC-62 expanded with OAuth scope verification. M-03: AC-81 audio quality pre-test. M-04: New Section 8.10 Conflict Resolution Protocol (CHALLENGE mechanism). M-05: HEARTBEAT.md integrity check hardened (stop+notify+require reset). M-06: New Section 8.11 Self-Improvement Validation & Rollback (shadow mode, auto-revert, cool-down). M-07: Dependency count corrected (8 direct). Minors: code imports, Chime audio note, cost tracking mechanism, output truncation rationale, socket path configurable, Q-07 clarified, eval schema validation. AC-81 through AC-84 added (cumulative 84 ACs). |
+
+---
+
+## 障害振り返りプロセス（RCA標準手順）
+
+> Issue #72 (2026-02-26 hanさん指摘) に基づき追加。
+
+### 原則
+
+障害振り返りは「現状スナップショットの列挙」ではなく、**時系列と5W1H** による因果分析を行う。
+
+### 標準テンプレート
+
+`docs/rca-template.md` を使用する（必須）。
+
+```
+cp docs/rca-template.md docs/rca-$(date +%Y-%m-%d)-<タイトル>.md
+```
+
+### 必須要素
+
+1. **タイムライン**: `git log --follow <file>` で実際の日時を確認して記入
+2. **5W1H分析**: Who/When/Where/What/Why/How を git タイムスタンプ + コード引用で根拠付き記述
+3. **5 Whys**: 根本原因まで5回掘り下げ（抽象的な分類で止めない）
+4. **再発防止策**: Issue 番号・担当者・期限を明記
+
+### 禁止事項
+
+- `「〜と思われる」「〜かもしれない」`（根拠不明の推測）
+- 時系列を省略した現状スナップショットのみの分析
+- 「手順不足」「認識不足」レベルで5 Whysを止める
+
+### Changelog
+
+| Date | Author | Change |
+|---|---|---|
+| 2026-03-06 | OCA | Issue #72 対応 — 障害振り返りプロセスセクション追加 + docs/rca-template.md 作成 |
