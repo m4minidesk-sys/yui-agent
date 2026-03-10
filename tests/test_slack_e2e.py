@@ -254,11 +254,11 @@ class TestSessionPersistence:
 
         handler.handle_mention(event, say)
 
-        # User message saved
-        mock_session_manager.add_message.assert_any_call("slack:C_TEST:U_USER", "user", "hello")
+        # User message saved (session_id uses thread_ts = ts when no thread_ts in event)
+        mock_session_manager.add_message.assert_any_call("slack:C_TEST:1.0", "user", "hello")
         # Assistant message saved
         mock_session_manager.add_message.assert_any_call(
-            "slack:C_TEST:U_USER", "assistant", "Hello! I'm Yui."
+            "slack:C_TEST:1.0", "assistant", "Hello! I'm Yui."
         )
 
     def test_dm_saves_to_session(self, handler, mock_session_manager):
@@ -596,8 +596,8 @@ class TestThreadReplyDeep:
 
         handler.handle_mention(event, say)
 
-        # Session ID should be channel:user based
-        expected_sid = "slack:C_THREAD_TEST:U_THREAD_USER"
+        # Session ID should be channel:thread_ts based (Issue #116)
+        expected_sid = "slack:C_THREAD_TEST:1700000002.000001"
         mock_session_manager.add_message.assert_any_call(expected_sid, "user", "<@U_BOT_123> in thread")
 
     def test_multiple_thread_replies_maintain_thread(self, handler, mock_agent):
@@ -664,8 +664,8 @@ class TestAgentTimeout:
 
         handler.handle_mention(event, say)
 
-        # User message should have been saved before agent call
-        sm.add_message.assert_called_with("slack:C_TIMEOUT:U_TIMEOUT", "user", "my question")
+        # User message should have been saved before agent call (session_id uses thread_ts = ts)
+        sm.add_message.assert_called_with("slack:C_TIMEOUT:1.0", "user", "my question")
 
     def test_agent_timeout_session_not_corrupted(self, mock_client):
         """After timeout, subsequent requests still work normally."""
@@ -785,10 +785,10 @@ class TestFiftyMessageCompaction:
         say = MagicMock()
         handler.handle_mention(event, say)
 
-        # Verify compact_session called with session_id and summarizer function
+        # Verify compact_session called with session_id (channel:thread_ts) and summarizer function
         sm.compact_session.assert_called_once()
         call_args = sm.compact_session.call_args
-        assert call_args[0][0] == "slack:C_COMP:U_COMP"
+        assert call_args[0][0] == "slack:C_COMP:1.0"
         assert call_args[0][1] is _summarize_messages
 
     def test_custom_compaction_threshold(self, mock_agent, mock_client):
